@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.20;
 
-import {Script} from "forge-std/Script.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {MockV3Aggregator} from "chainlink-brownie-contracts/contracts/src/v0.8/tests/MockV3Aggregator.sol";
+import {MockV3Aggregator} from "@chainlink/contracts/v0.8/tests/MockV3Aggregator.sol";
+import {MockCrediflexServiceManager} from "test/mocks/MockCrediflexServiceManager.sol";
+import {DeployHelpers} from "./DeployHelpers.s.sol";
 
-contract HelperConfig is Script {
+contract HelperConfig is DeployHelpers {
     NetworkConfig public activeNetworkConfig;
 
     struct NetworkConfig {
@@ -13,7 +14,7 @@ contract HelperConfig is Script {
         address wethUsdDataFeed;
         address usde;
         address weth;
-        uint256 deployerKey;
+        address serviceManager;
     }
 
     // Price Feed IDs provided by pyth
@@ -28,23 +29,37 @@ contract HelperConfig is Script {
     int64 public constant USDE_USD_PRICE = 110e6;
     uint256 public constant SUPPLY = 1000e18;
 
-    uint256 public DEFAULT_ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
-
     constructor() {
         if (block.chainid == 1) {
             activeNetworkConfig = getEthMainnetConfig();
+        } else if (block.chainid == 421_614) {
+            activeNetworkConfig = getArbitrumSepoliaConfig();
         } else {
             activeNetworkConfig = getOrCreateAnvilConfig();
         }
     }
 
-    function getEthMainnetConfig() public view returns (NetworkConfig memory) {
+    //   MockUsde deployed at: 0x6AcaCCDacE944619678054Fe0eA03502ed557651
+    //   MockWETH deployed at: 0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E
+    //   USDE/USD Price Feed deployed at: 0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7
+    //   WETH/USD Price Feed deployed at: 0x122e4C08f927AD85534Fc19FD5f3BC607b00C731
+    function getArbitrumSepoliaConfig() public pure returns (NetworkConfig memory) {
+        return NetworkConfig({
+            usdeUsdDataFeed: 0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7,
+            wethUsdDataFeed: 0x122e4C08f927AD85534Fc19FD5f3BC607b00C731,
+            usde: 0x6AcaCCDacE944619678054Fe0eA03502ed557651,
+            weth: 0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E,
+            serviceManager: 0xc4327AD867E6e9a938e03815Ccdd4198ccE1023c
+        });
+    }
+
+    function getEthMainnetConfig() public pure returns (NetworkConfig memory) {
         return NetworkConfig({
             usdeUsdDataFeed: 0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961,
             wethUsdDataFeed: 0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961,
             usde: 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3,
             weth: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,
-            deployerKey: vm.envUint("PRIVATE_KEY")
+            serviceManager: address(0) // need deployed first
         });
     }
 
@@ -53,7 +68,8 @@ contract HelperConfig is Script {
         if (activeNetworkConfig.wethUsdDataFeed != address(0)) {
             return activeNetworkConfig;
         }
-        vm.startBroadcast();
+
+        // vm.startBroadcast(getDeployerKey());
 
         MockV3Aggregator wethAggregator = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
         ERC20Mock wethMock = new ERC20Mock();
@@ -63,14 +79,16 @@ contract HelperConfig is Script {
         ERC20Mock usdeMock = new ERC20Mock();
         usdeMock.mint(msg.sender, SUPPLY);
 
-        vm.stopBroadcast();
+        MockCrediflexServiceManager serviceManager = new MockCrediflexServiceManager();
+
+        // vm.stopBroadcast();
 
         return NetworkConfig({
             usdeUsdDataFeed: address(usdeAggregator), // Use address of usdeAggregator
             wethUsdDataFeed: address(wethAggregator), // Use address of wethAggregator
             weth: address(wethMock),
             usde: address(usdeMock),
-            deployerKey: DEFAULT_ANVIL_PRIVATE_KEY
+            serviceManager: address(serviceManager)
         });
     }
 }

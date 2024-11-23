@@ -8,7 +8,6 @@ interface ICrediflexServiceManager {
 
     struct Task {
         address user;
-        uint256 cScore;
         uint32 taskCreatedBlock;
     }
 
@@ -25,7 +24,8 @@ interface ICrediflexServiceManager {
 
     function allTaskResponses(address operator, uint32 taskIndex) external view returns (bytes memory);
 
-    function createNewTask(address user, uint256 cScore) external returns (Task memory);
+    function createNewTask(address user) external returns (Task memory);
 
-    function respondToTask(Task calldata task, uint32 referenceTaskIndex, bytes calldata signature) external;
+    function respondToTask(Task calldata task, uint256 cScore, uint32 referenceTaskIndex, bytes calldata signature)
+        external;
 }

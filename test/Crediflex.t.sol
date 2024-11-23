@@ -2,12 +2,12 @@
 pragma solidity ^0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Crediflex} from "../src/Crediflex.sol";
-import {HelperConfig} from "../../script/HelperConfig.s.sol";
+import {Crediflex} from "src/Crediflex.sol";
+import {HelperConfig} from "script/HelperConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {MockCrediflexServiceManager} from "./mocks/MockCrediflexServiceManager.sol";
-import {AggregatorV2V3Interface} from "@chainlink/contracts/v0.8/shared/interfaces/AggregatorV2V3Interface.sol";
+import {AggregatorV2V3Interface} from
+    "@chainlink/contracts/v0.8/shared/interfaces/AggregatorV2V3Interface.sol";
 import {ICrediflexServiceManager} from "../interfaces/ICrediflexServiceManager.sol";
 
 contract CrediflexTest is Test {
@@ -19,7 +19,7 @@ contract CrediflexTest is Test {
     address wethUsdDataFeed;
     address usde;
     address weth;
-    uint256 deployerKey;
+    address serviceManager;
 
     uint256 public constant STARTING_USER_BALANCE = 10 ether;
 
@@ -27,13 +27,19 @@ contract CrediflexTest is Test {
     address BORROWER = makeAddr("borrower");
     uint256 public constant LENDING_AMOUNT = 5000 ether;
 
+    uint256 constant BASE_LTV = 85e16; // 85%
+    uint256 constant MAX_LTV = 120e16; // 120%
+    uint256 constant MAX_C_SCORE = 10e18; // Maximum CScore (10 * 1e18)
+    uint256 constant MIN_C_SCORE = 5e18; // Minimum CScore for dynamic LTV
+
     function setUp() public {
         helperConfig = new HelperConfig();
 
-        crediflexManager = new MockCrediflexServiceManager();
-        (usdeUsdDataFeed, wethUsdDataFeed, usde, weth,) = helperConfig.activeNetworkConfig();
+        (usdeUsdDataFeed, wethUsdDataFeed, usde, weth, serviceManager) =
+            helperConfig.activeNetworkConfig();
+        crediflexManager = ICrediflexServiceManager(serviceManager);
 
-        crediflex = new Crediflex(address(crediflexManager), usdeUsdDataFeed, wethUsdDataFeed, usde, weth);
+        crediflex = new Crediflex(serviceManager, usdeUsdDataFeed, wethUsdDataFeed, usde, weth);
 
         ERC20Mock(weth).mint(BORROWER, STARTING_USER_BALANCE);
         ERC20Mock(usde).mint(BORROWER, STARTING_USER_BALANCE);
@@ -151,5 +157,42 @@ contract CrediflexTest is Test {
         (, uint256 borrowShares,) = crediflex.positions(BORROWER);
         assertEq(borrowShares, 0);
         vm.stopPrank();
+    }
+
+    function testRequestCScore() public {
+        uint256 expectedCScore = 7 ether;
+        ICrediflexServiceManager.Task memory task = crediflexManager.createNewTask(BORROWER);
+        crediflexManager.respondToTask(task, expectedCScore, 0, "");
+        ICrediflexServiceManager.CScoreData memory cScoreData =
+            crediflexManager.getUserCScoreData(BORROWER);
+        assertEq(cScoreData.cScore, expectedCScore);
+    }
+
+    function testDynamicLTVIfCScoreLessThanThreshold() public {
+        ICrediflexServiceManager.Task memory task = crediflexManager.createNewTask(BORROWER);
+        crediflexManager.respondToTask(task, MIN_C_SCORE - 1e18, 0, "");
+
+        uint256 ltv = crediflex.calculateDynamicLTV(BORROWER);
+        assertEq(BASE_LTV, ltv);
+    }
+
+    function testDynamicLTVIfCScoreGreaterThanThreshold() public {
+        uint256 cScore = MIN_C_SCORE + 3e18;
+        ICrediflexServiceManager.Task memory task = crediflexManager.createNewTask(BORROWER);
+        crediflexManager.respondToTask(task, cScore, 0, "");
+
+        uint256 ltv = crediflex.calculateDynamicLTV(BORROWER);
+        console.log("Calculated LTV:", ltv);
+        assertGt(ltv, BASE_LTV);
+    }
+
+    function testDynamicLTVIfCScoreReachedMax() public {
+        uint256 cScore = MAX_C_SCORE + 1e18;
+        ICrediflexServiceManager.Task memory task = crediflexManager.createNewTask(BORROWER);
+        crediflexManager.respondToTask(task, cScore, 0, "");
+
+        uint256 ltv = crediflex.calculateDynamicLTV(BORROWER);
+        console.log("Calculated LTV:", ltv);
+        assertEq(ltv, MAX_LTV);
     }
 }

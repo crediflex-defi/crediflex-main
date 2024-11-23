@@ -9,10 +9,9 @@ contract MockCrediflexServiceManager is ICrediflexServiceManager {
     mapping(address => mapping(uint32 => bytes)) public allTaskResponses;
     mapping(address => CScoreData) private _userCScoreData;
 
-    function createNewTask(address user, uint256 cScore) external returns (Task memory) {
+    function createNewTask(address user) external returns (Task memory) {
         Task memory newTask;
         newTask.user = user;
-        newTask.cScore = cScore;
         newTask.taskCreatedBlock = uint32(block.number);
 
         // store hash of task onchain, emit event, and increase taskNum
@@ -23,12 +22,15 @@ contract MockCrediflexServiceManager is ICrediflexServiceManager {
         return newTask;
     }
 
-    function respondToTask(Task calldata task, uint32, /*referenceTaskIndex*/ bytes calldata /* signature */ )
-        external
-    {
+    function respondToTask(
+        Task calldata task,
+        uint256 cScore,
+        uint32, /*referenceTaskIndex*/
+        bytes calldata /* signature */
+    ) external {
         allTaskResponses[msg.sender][latestTaskNum] = "";
-        _userCScoreData[task.user] = CScoreData({cScore: task.cScore, lastUpdate: block.timestamp});
-        emit CScoreInserted(task.user, task.cScore, block.timestamp);
+        _userCScoreData[task.user] = CScoreData({cScore: cScore, lastUpdate: block.timestamp});
+        emit CScoreInserted(task.user, cScore, block.timestamp);
         emit TaskResponded(latestTaskNum, task, msg.sender);
     }
 
