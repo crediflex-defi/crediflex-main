@@ -1,7 +1,8 @@
 {
 	"name": "undercollateralized-borrow-lending",
 	"version": "1.0.0",
-	"description": "**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**",
+	"description": "A smart contract project for undercollateralized borrowing and lending on Ethereum, utilizing Foundry for development.",
+	"author": "Ammar Robbani <amr.robb@gmail.com>",
 	"main": "index.js",
 	"directories": {
 		"lib": "lib",
@@ -9,20 +10,20 @@
 	},
 	"scripts": {
 		"chain": "anvil --config-out localhost.json",
-		"compile": "forge compile",
-		"deploy": "forge build --build-info --build-info-path out/build-info/ && forge script script/Deploy.s.sol --rpc-url ${1:-default_network} --broadcast --legacy && node script/generateTsAbis.js",
-		"deploy:verify": "forge build --build-info --build-info-path out/build-info/ && forge script script/Deploy.s.sol --rpc-url ${1:-default_network} --broadcast --legacy --verify ; node script/generateTsAbis.js",
+		"build": "make build",
+		"compile": "make compile",
+		"deploy": "make deploy",
+		"deploy:verify": "make deploy-verify",
 		"fork": "anvil --fork-url ${0:-mainnet} --chain-id 31337 --config-out localhost.json",
-		"lint": "forge fmt",
-		"test": "forge test",
-		"verify": "forge build --build-info --build-info-path out/build-info/ && forge script script/VerifyAll.s.sol --ffi --rpc-url ${1:-default_network}",
-		"generate:abi": "node script/generateTsAbis.js"
+		"lint": "make lint",
+		"test": "make test",
+		"verify": "make verify",
+		"generate:abi": "make generate-abi"
 	},
 	"keywords": [],
-	"author": "Ammar Robbani <amr.robb@gmail.com>",
 	"license": "ISC",
 	"dependencies": {
-    "@pythnetwork/pyth-sdk-solidity": "^4.0.0",
+		"@pythnetwork/pyth-sdk-solidity": "^4.0.0",
 		"dotenv": "~16.3.1",
 		"envfile": "~6.18.0",
 		"ethers": "~5.7.1",

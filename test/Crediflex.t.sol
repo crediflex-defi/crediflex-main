@@ -25,7 +25,7 @@ contract CrediflexTest is Test {
 
     address LENDER = makeAddr("lender");
     address BORROWER = makeAddr("borrower");
-    uint256 public constant LENDING_AMOUNT = 5000 ether;
+    uint256 public constant LENDING_AMOUNT = 10_000 ether;
 
     uint256 constant BASE_LTV = 85e16; // 85%
     uint256 constant MAX_LTV = 120e16; // 120%
@@ -116,7 +116,7 @@ contract CrediflexTest is Test {
 
     function testBorrowIsNotHealthy() public {
         vm.startPrank(BORROWER);
-        uint256 collateralAmount = 1 ether; // WETH / USD 3000
+        uint256 collateralAmount = 1 ether; // WETH / USD 3500
         uint256 borrowAmount = 3000 ether; // USDE / USD 1.1
         IERC20(weth).approve(address(crediflex), collateralAmount);
         crediflex.supplyCollateral(collateralAmount);
@@ -194,5 +194,57 @@ contract CrediflexTest is Test {
         uint256 ltv = crediflex.calculateDynamicLTV(BORROWER);
         console.log("Calculated LTV:", ltv);
         assertEq(ltv, MAX_LTV);
+    }
+
+    function testCalculateHealth() public suppliedByLender {
+        vm.startPrank(BORROWER);
+        uint256 collateralAmount = 2 ether; // 7000 USD
+        uint256 borrowAmount = 4000 ether; // 4400 USD
+
+        // Approve and supply collateral
+        IERC20(weth).approve(address(crediflex), collateralAmount);
+        crediflex.supplyCollateral(collateralAmount);
+
+        // Borrow against the collateral
+        crediflex.borrow(borrowAmount);
+
+        // Check if the borrowed amount is transferred to the borrower
+        console.log("Health Factor:", crediflex.calculateHealth(BORROWER));
+
+        (uint256 supplyShares, uint256 borrowShares, uint256 collateral) =
+            crediflex.positions(BORROWER);
+        console.log("Borrower Position - Supply Shares:", supplyShares);
+        console.log("Borrower Position - Borrow Shares:", borrowShares);
+        console.log("Borrower Position - Collateral:", collateral);
+
+        vm.stopPrank();
+    }
+
+    function testCalculateHealthWithMaxLTV() public suppliedByLender {
+        uint256 cScore = MAX_C_SCORE + 1e18;
+        ICrediflexServiceManager.Task memory task = crediflexManager.createNewTask(BORROWER);
+        crediflexManager.respondToTask(task, cScore, 0, "");
+
+        vm.startPrank(BORROWER);
+        uint256 collateralAmount = 1 ether; // 7000 USD
+        uint256 borrowAmount = 100 ether; // 7070 USD
+
+        // Approve and supply collateral
+        IERC20(weth).approve(address(crediflex), collateralAmount);
+        crediflex.supplyCollateral(collateralAmount);
+
+        // Borrow against the collateral
+        crediflex.borrow(borrowAmount);
+
+        // Check if the borrowed amount is transferred to the borrower
+        console.log("Health Factor:", crediflex.calculateHealth(BORROWER));
+
+        (uint256 supplyShares, uint256 borrowShares, uint256 collateral) =
+            crediflex.positions(BORROWER);
+        console.log("Borrower Position - Supply Shares:", supplyShares);
+        console.log("Borrower Position - Borrow Shares:", borrowShares);
+        console.log("Borrower Position - Collateral:", collateral);
+
+        vm.stopPrank();
     }
 }

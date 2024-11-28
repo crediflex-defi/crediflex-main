@@ -9,9 +9,18 @@ import {ICrediflexServiceManager} from "../interfaces/ICrediflexServiceManager.s
 /**
  * @title Crediflex
  * @dev A contract for managing supply, collateral, and borrowing of assets with dynamic LTV based on credit scores.
- * @author Ammar Robbani
  */
 contract Crediflex {
+    error ZeroAssets();
+    error InsufficientShares();
+    error InsufficientAssets();
+    error InsufficientCollateral();
+    error PositionNotHealthy();
+    error InsufficientSupply();
+    error NoOutstandingBorrow();
+    error RepayExceedsBorrow();
+    error NegativeAnswer();
+
     AggregatorV2V3Interface internal usdeUsdDataFeed;
     AggregatorV2V3Interface internal wethUsdDataFeed;
     ICrediflexServiceManager internal serviceManager;
@@ -70,7 +79,7 @@ contract Crediflex {
      * @param assets The amount of assets to supply.
      */
     function supply(uint256 assets) public {
-        require(assets > 0, "assets must be greater than zero");
+        if (assets == 0) revert ZeroAssets();
         accrueInterest();
         Position storage position = positions[msg.sender];
         uint256 shares = 0;
@@ -91,12 +100,12 @@ contract Crediflex {
      * @param shares The amount of shares to withdraw.
      */
     function withdraw(uint256 shares) public {
-        require(shares > 0, "Shares must be greater than zero");
+        if (shares == 0) revert ZeroAssets();
         Position storage position = positions[msg.sender];
-        require(shares <= position.supplyShares, "Insufficient shares");
+        if (shares > position.supplyShares) revert InsufficientShares();
 
         uint256 assets = shares * totalSupplyAssets / totalSupplyShares;
-        require(assets <= totalSupplyAssets, "Insufficient assets in the pool");
+        if (assets > totalSupplyAssets) revert InsufficientAssets();
         accrueInterest();
 
         totalSupplyAssets -= assets;
@@ -111,6 +120,7 @@ contract Crediflex {
      * @param assets The amount of collateral to supply.
      */
     function supplyCollateral(uint256 assets) external {
+        if (assets == 0) revert ZeroAssets();
         accrueInterest();
         Position storage position = positions[msg.sender];
         position.collateral += assets;
@@ -122,13 +132,13 @@ contract Crediflex {
      * @param assets The amount of collateral to withdraw.
      */
     function withdrawCollateral(uint256 assets) external {
-        accrueInterest();
+        if (assets == 0) revert ZeroAssets();
         Position storage position = positions[msg.sender];
-        require(assets > 0, "assets must be greater than zero");
-        require(position.collateral >= assets, "Insufficient collateral");
+        if (position.collateral < assets) revert InsufficientCollateral();
+        accrueInterest();
 
         position.collateral -= assets;
-        require(isHealty(), "Position is not healthy");
+        if (!isHealty()) revert PositionNotHealthy();
         IERC20(wethAddress).transfer(msg.sender, assets);
     }
 
@@ -137,6 +147,7 @@ contract Crediflex {
      * @param assets The amount of assets to borrow.
      */
     function borrow(uint256 assets) external {
+        if (assets == 0) revert ZeroAssets();
         accrueInterest();
         Position storage position = positions[msg.sender];
         uint256 shares = 0;
@@ -149,24 +160,24 @@ contract Crediflex {
         totalBorrowAssets += assets;
         totalBorrowShares += shares;
 
-        require(isHealty(), "Position is not healthy");
+        if (!isHealty()) revert PositionNotHealthy();
         uint256 totalSupply = IERC20(usdeAddress).balanceOf(address(this));
-        require(totalSupply >= assets, "Insufficient supply to borrow");
+        if (totalSupply < assets) revert InsufficientSupply();
         IERC20(usdeAddress).transfer(msg.sender, assets);
     }
 
     /**
      * @notice Repays borrowed assets to the contract.
-     * @param assets The amount of assets to repay.
+     * @param shares The amount of shares to repay.
      */
-    function repay(uint256 assets) external {
-        accrueInterest();
+    function repay(uint256 shares) external {
+        if (shares == 0) revert ZeroAssets();
         Position storage position = positions[msg.sender];
-        require(assets > 0, "assets must be greater than zero");
-        require(position.borrowShares > 0, "No outstanding borrow");
+        if (position.borrowShares == 0) revert NoOutstandingBorrow();
+        if (shares > position.borrowShares) revert RepayExceedsBorrow();
+        accrueInterest();
 
-        uint256 shares = assets * totalBorrowShares / totalBorrowAssets;
-        require(shares <= position.borrowShares, "Repay assets exceeds borrowed assets");
+        uint256 assets = shares * totalBorrowAssets / totalBorrowShares;
 
         position.borrowShares -= shares;
         totalBorrowAssets -= assets;
@@ -194,7 +205,7 @@ contract Crediflex {
      * @return True if the position is healthy, false otherwise.
      */
     function isHealty() public view returns (bool) {
-        return calculateHealth() > HEALTH_FACTOR_THRESHOLD;
+        return calculateHealth(msg.sender) > HEALTH_FACTOR_THRESHOLD;
     }
 
     /**
@@ -219,18 +230,18 @@ contract Crediflex {
      * @notice Calculates the health factor of the user's position.
      * @return The calculated health factor.
      */
-    function calculateHealth() public view returns (uint256) {
-        Position storage position = positions[msg.sender];
-        uint256 collateral =
-            getDataFeedLatestAnswer(wethUsdDataFeed) * position.collateral / PRECISION;
-        uint256 borrowed =
-            getDataFeedLatestAnswer(usdeUsdDataFeed) * position.borrowShares / PRECISION;
-
-        if (borrowed == 0) {
+    function calculateHealth(address user) public view returns (uint256) {
+        Position storage position = positions[user];
+        if (position.borrowShares == 0) {
             return type(uint256).max;
         }
 
-        uint256 healthFactor = (collateral * calculateDynamicLTV(msg.sender)) / borrowed;
+        uint256 collateral =
+            getConversionPrice(position.collateral, wethUsdDataFeed, usdeUsdDataFeed);
+
+        uint256 borrowed = position.borrowShares * totalBorrowAssets / totalBorrowShares;
+        uint256 healthFactor = (collateral * calculateDynamicLTV(user)) / (borrowed);
+
         return healthFactor;
     }
 
@@ -245,7 +256,7 @@ contract Crediflex {
         returns (uint256)
     {
         (, int256 answer,,,) = dataFeed.latestRoundData();
-        require(answer >= 0, "Negative answer not allowed");
+        if (answer < 0) revert NegativeAnswer();
         return uint256(answer) * PRECISION / (10 ** dataFeed.decimals());
     }
 

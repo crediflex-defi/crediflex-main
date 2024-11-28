@@ -25,7 +25,7 @@ contract HelperConfig is DeployHelpers {
     // wethUsdDataFeed = AggregatorV2V3Interface(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
 
     uint8 public DECIMALS = 8;
-    int64 public constant ETH_USD_PRICE = 3000e8;
+    int64 public constant ETH_USD_PRICE = 3500e8;
     int64 public constant USDE_USD_PRICE = 110e6;
     uint256 public constant SUPPLY = 1000e18;
 
