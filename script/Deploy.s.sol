@@ -1,14 +1,12 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-import {DeployMocks} from "./DeployMocks.s.sol";
 import {DeployCrediflex} from "./DeployCrediflex.s.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {console} from "forge-std/Script.sol";
 import "forge-std/Vm.sol";
 
 contract Deploy {
-    DeployMocks public deployMocks;
     DeployCrediflex public deployCrediflex;
 
     function run() public {

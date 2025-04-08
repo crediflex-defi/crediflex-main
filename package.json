@@ -1,9 +1,8 @@
 {
-	"name": "undercollateralized-borrow-lending",
+	"name": "crediflex",
 	"version": "1.0.0",
 	"description": "A smart contract project for undercollateralized borrowing and lending on Ethereum, utilizing Foundry for development.",
 	"author": "Ammar Robbani <amr.robb@gmail.com>",
-	"main": "index.js",
 	"directories": {
 		"lib": "lib",
 		"test": "test"
@@ -32,7 +31,9 @@
 		"toml": "~3.0.0"
 	},
 	"devDependencies": {
-		"@types/prettier": "2",
-		"@types/qrcode": "1"
+		"@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
+		"hardhat": "^2.22.19",
+		"ts-node": ">=8.0.0",
+		"typescript": "5.8.3"
 	}
 }

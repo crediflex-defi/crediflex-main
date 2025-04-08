@@ -15,40 +15,41 @@ contract CrediflexTest is Test {
     ICrediflexServiceManager public crediflexManager;
     HelperConfig public helperConfig;
 
-    address usdeUsdDataFeed;
+    address usdcUsdDataFeed;
     address wethUsdDataFeed;
-    address usde;
+    address usdc;
     address weth;
     address serviceManager;
 
-    uint256 public constant STARTING_USER_BALANCE = 10 ether;
+    uint256 public constant STARTING_ETH_BALANCE = 10 ether;
+    uint256 public constant STARTING_USDC_BALANCE = 100_000e6;
 
     address LENDER = makeAddr("lender");
     address BORROWER = makeAddr("borrower");
-    uint256 public constant LENDING_AMOUNT = 10_000 ether;
+    uint256 public constant LENDING_AMOUNT = 10_000 * 10e6;
 
     uint256 constant BASE_LTV = 85e16; // 85%
-    uint256 constant MAX_LTV = 120e16; // 120%
+    uint256 constant MAX_LTV = 200e16; // 200%
     uint256 constant MAX_C_SCORE = 10e18; // Maximum CScore (10 * 1e18)
     uint256 constant MIN_C_SCORE = 5e18; // Minimum CScore for dynamic LTV
 
     function setUp() public {
         helperConfig = new HelperConfig();
 
-        (usdeUsdDataFeed, wethUsdDataFeed, usde, weth, serviceManager) =
+        (usdcUsdDataFeed, wethUsdDataFeed, usdc, weth, serviceManager) =
             helperConfig.activeNetworkConfig();
         crediflexManager = ICrediflexServiceManager(serviceManager);
 
-        crediflex = new Crediflex(serviceManager, usdeUsdDataFeed, wethUsdDataFeed, usde, weth);
+        crediflex = new Crediflex(serviceManager, usdcUsdDataFeed, wethUsdDataFeed, usdc, weth);
 
-        ERC20Mock(weth).mint(BORROWER, STARTING_USER_BALANCE);
-        ERC20Mock(usde).mint(BORROWER, STARTING_USER_BALANCE);
+        ERC20Mock(weth).mint(BORROWER, STARTING_ETH_BALANCE);
+        ERC20Mock(usdc).mint(BORROWER, STARTING_USDC_BALANCE);
     }
 
     function testSupply() public {
         vm.startPrank(BORROWER);
-        uint256 amount = 1 ether;
-        IERC20(usde).approve(address(crediflex), amount);
+        uint256 amount = 1000e6;
+        IERC20(usdc).approve(address(crediflex), amount);
         crediflex.supply(amount);
         assertEq(crediflex.totalSupplyShares(), amount);
         (uint256 shares,,) = crediflex.positions(BORROWER);
@@ -59,8 +60,8 @@ contract CrediflexTest is Test {
 
     modifier suppliedByLender() {
         vm.startPrank(LENDER);
-        ERC20Mock(usde).mint(LENDER, LENDING_AMOUNT);
-        IERC20(usde).approve(address(crediflex), LENDING_AMOUNT);
+        ERC20Mock(usdc).mint(LENDER, LENDING_AMOUNT);
+        IERC20(usdc).approve(address(crediflex), LENDING_AMOUNT);
         crediflex.supply(LENDING_AMOUNT);
         vm.stopPrank();
         _;
@@ -68,14 +69,14 @@ contract CrediflexTest is Test {
 
     function testWithdraw() public {
         vm.startPrank(BORROWER);
-        uint256 amount = 1 ether;
-        IERC20(usde).approve(address(crediflex), amount);
+        uint256 amount = 1000e6;
+        IERC20(usdc).approve(address(crediflex), amount);
         crediflex.supply(amount);
 
         (uint256 shares,,) = crediflex.positions(BORROWER);
         crediflex.withdraw(shares);
         assertEq(crediflex.totalSupplyShares(), 0);
-        assertEq(IERC20(usde).balanceOf(BORROWER), STARTING_USER_BALANCE);
+        assertEq(IERC20(usdc).balanceOf(BORROWER), STARTING_USDC_BALANCE);
         vm.stopPrank();
     }
 
@@ -104,12 +105,12 @@ contract CrediflexTest is Test {
     function testBorrowInsufficientSupply() public {
         vm.startPrank(BORROWER);
         uint256 collateralAmount = 1 ether; // WETH
-        uint256 borrowAmount = 0.5 ether; // USDE
+        uint256 borrowAmount = 0.5 * 1e6; // USDC
         IERC20(weth).approve(address(crediflex), collateralAmount);
         crediflex.supplyCollateral(collateralAmount);
 
         // Attempt to borrow without any lender supplying funds
-        vm.expectRevert("Insufficient supply to borrow");
+        vm.expectRevert(abi.encodeWithSignature("InsufficientSupply()"));
         crediflex.borrow(borrowAmount);
         vm.stopPrank();
     }
@@ -121,7 +122,7 @@ contract CrediflexTest is Test {
         IERC20(weth).approve(address(crediflex), collateralAmount);
         crediflex.supplyCollateral(collateralAmount);
 
-        vm.expectRevert("Position is not healthy");
+        vm.expectRevert(abi.encodeWithSignature("PositionNotHealthy()"));
         crediflex.borrow(borrowAmount);
         vm.stopPrank();
     }
@@ -129,30 +130,30 @@ contract CrediflexTest is Test {
     function testBorrow() public suppliedByLender {
         vm.startPrank(BORROWER);
         uint256 collateralAmount = 1 ether; // WETH
-        uint256 borrowAmount = 1000 ether; // USDE
+        uint256 borrowAmount = 1000e6; // USDC
         IERC20(weth).approve(address(crediflex), collateralAmount);
         crediflex.supplyCollateral(collateralAmount);
 
-        uint256 expectedUsdeBalance = STARTING_USER_BALANCE + borrowAmount;
+        uint256 expectedUsdcBalance = STARTING_USDC_BALANCE + borrowAmount;
 
         crediflex.borrow(borrowAmount);
         (, uint256 borrowShares,) = crediflex.positions(BORROWER);
         assertEq(borrowShares, borrowAmount);
 
-        uint256 usdeBalance = IERC20(usde).balanceOf(BORROWER);
-        assertEq(usdeBalance, expectedUsdeBalance);
+        uint256 usdcBalance = IERC20(usdc).balanceOf(BORROWER);
+        assertEq(usdcBalance, expectedUsdcBalance);
         vm.stopPrank();
     }
 
     function testRepay() public suppliedByLender {
         vm.startPrank(BORROWER);
         uint256 collateralAmount = 1 ether;
-        uint256 borrowAmount = 0.5 ether;
+        uint256 borrowAmount = 500 * 1e6;
         IERC20(weth).approve(address(crediflex), collateralAmount);
         crediflex.supplyCollateral(collateralAmount);
 
         crediflex.borrow(borrowAmount);
-        IERC20(usde).approve(address(crediflex), borrowAmount);
+        IERC20(usdc).approve(address(crediflex), borrowAmount);
         crediflex.repay(borrowAmount);
         (, uint256 borrowShares,) = crediflex.positions(BORROWER);
         assertEq(borrowShares, 0);
@@ -173,11 +174,12 @@ contract CrediflexTest is Test {
         crediflexManager.respondToTask(task, MIN_C_SCORE - 1e18, 0, "");
 
         uint256 ltv = crediflex.calculateDynamicLTV(BORROWER);
+        console.log("Calculated LTV:", ltv);
         assertEq(BASE_LTV, ltv);
     }
 
     function testDynamicLTVIfCScoreGreaterThanThreshold() public {
-        uint256 cScore = MIN_C_SCORE + 3e18;
+        uint256 cScore = MIN_C_SCORE + 1e17;
         ICrediflexServiceManager.Task memory task = crediflexManager.createNewTask(BORROWER);
         crediflexManager.respondToTask(task, cScore, 0, "");
 
@@ -198,8 +200,8 @@ contract CrediflexTest is Test {
 
     function testCalculateHealth() public suppliedByLender {
         vm.startPrank(BORROWER);
-        uint256 collateralAmount = 2 ether; // 7000 USD
-        uint256 borrowAmount = 4000 ether; // 4400 USD
+        uint256 collateralAmount = 2 ether; // 3600 USD
+        uint256 borrowAmount = 1800e6; // 1000 USD
 
         // Approve and supply collateral
         IERC20(weth).approve(address(crediflex), collateralAmount);
@@ -226,8 +228,8 @@ contract CrediflexTest is Test {
         crediflexManager.respondToTask(task, cScore, 0, "");
 
         vm.startPrank(BORROWER);
-        uint256 collateralAmount = 1 ether; // 7000 USD
-        uint256 borrowAmount = 100 ether; // 7070 USD
+        uint256 collateralAmount = 1 ether; // 1800 USD
+        uint256 borrowAmount = 1000e6; // 100 USD
 
         // Approve and supply collateral
         IERC20(weth).approve(address(crediflex), collateralAmount);

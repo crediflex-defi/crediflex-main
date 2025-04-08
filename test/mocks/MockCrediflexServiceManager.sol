@@ -9,7 +9,9 @@ contract MockCrediflexServiceManager is ICrediflexServiceManager {
     mapping(address => mapping(uint32 => bytes)) public allTaskResponses;
     mapping(address => CScoreData) private _userCScoreData;
 
-    function createNewTask(address user) external returns (Task memory) {
+    function createNewTask(
+        address user
+    ) external returns (Task memory) {
         Task memory newTask;
         newTask.user = user;
         newTask.taskCreatedBlock = uint32(block.number);
@@ -34,7 +36,9 @@ contract MockCrediflexServiceManager is ICrediflexServiceManager {
         emit TaskResponded(latestTaskNum, task, msg.sender);
     }
 
-    function getUserCScoreData(address user) external view override returns (CScoreData memory) {
+    function getUserCScoreData(
+        address user
+    ) external view override returns (CScoreData memory) {
         return _userCScoreData[user];
     }
 }

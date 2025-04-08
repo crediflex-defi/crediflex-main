@@ -1,32 +1,69 @@
 -include .env
 
 # Default values
-DEFAULT_NETWORK := default_network
-FORK_NETWORK := mainnet
+DEFAULT_NETWORK := $(shell grep 'default_network' foundry.toml | cut -d '"' -f2)
+FORK_NETWORK := $(shell grep 'mainnet =' foundry.toml | cut -d '"' -f2)
 
 # Custom network can be set via make network=<network_name>
 network ?= $(DEFAULT_NETWORK)
+$(info Network: $(network))
 
-.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify
+# Access PRIVATE_KEY from .env
+PRIVATE_KEY := $(PRIVATE_KEY)
+
+# Get network URL from [rpc_endpoints] section
+NETWORK_URL := $(shell awk -v net="$(network)" 'BEGIN{found=0} /^\[rpc_endpoints\]/ {found=1; next} /^\[.*\]/ {found=0} found && $$0 ~ net {split($$0, a, "="); gsub(/[ \t"]/, "", a[2]); print a[2]}' foundry.toml)
+
+ETHERSCAN_KEY := $(shell awk -v net="$(network)" 'match($$0, net" *= *\\{[^}]*key *= *\"[^\"]+\"") { \
+  n = split($$0, a, /key *= *"/); \
+  split(a[2], b, /"/); \
+  print b[1]; \
+  exit \
+}' foundry.toml)
+
+# Get verifier name and URL from verifier.toml
+VERIFIER := $(shell awk -v net="$(network)" 'BEGIN{p=0} $$0 ~ "\\["net"\\]" {p=1; next} /^\[.*\]/ {p=0} p && $$1=="name" {gsub(/"/, "", $$3); print $$3}' foundry.toml)
+VERIFIER_URL := $(shell awk -v net="$(network)" 'BEGIN{p=0} $$0 ~ "\\["net"\\]" {p=1; next} /^\[.*\]/ {p=0} p && $$1=="url" {gsub(/"/, "", $$3); print $$3}' foundry.toml)
+
+VERIFIER_CONFIG := $(shell \
+	args=""; \
+	[ -n "$(VERIFIER)" ] && args="$$args\"--verifier\",\"$(VERIFIER)\","; \
+	[ -n "$(VERIFIER_URL)" ] && args="$$args\"--verifier-url\",\"$(VERIFIER_URL)\","; \
+	[ -n "$(ETHERSCAN_KEY)" ] && args="$$args\"--etherscan-api-key\",\"$(ETHERSCAN_KEY)\","; \
+	echo "[$${args%,}]" \
+)
+
+
+$(info Network URL: $(NETWORK_URL))
+$(info Verifier: $(VERIFIER))
+$(info Verifier URL: $(VERIFIER_URL))
+$(info Etherscan KEY: $(ETHERSCAN_KEY))
+$(info Verifier Config: $(VERIFIER_CONFIG))
+
+# Ensure NETWORK_URL is not empty
+ifeq ($(strip $(NETWORK_URL)),)
+$(error NETWORK_URL is not set for network '$(network)'. Please check your foundry.toml configuration.)
+endif
 
 # Helper function to run forge script
 define forge_script
-	forge script script/Deploy.s.sol --rpc-url $(network) --broadcast --legacy $(1)
+	forge script $(1) --rpc-url $(NETWORK_URL) --broadcast --legacy --private-key $(PRIVATE_KEY) $(2) --skip-simulation 
 endef
 
 # Define a target to deploy using the specified network
-deploy: build
-	$(call forge_script,)
-	$(MAKE) generate-abi
+deploy-core: build
+	$(call forge_script,script/Deploy.s.sol,)
 
 # Define a target to verify deployment using the specified network
-deploy-verify: build
-	$(call forge_script,--verify)
-	$(MAKE) generate-abi
+deploy-core-verify: build
+	$(call forge_script,script/Deploy.s.sol,)
+
+deploy-tokens: build
+	$(call forge_script,script/DeployTokens.s.sol,)
 
 # Define a target to verify contracts using the specified network
 verify: build
-	forge script script/VerifyAll.s.sol --ffi --rpc-url $(network)
+	forge script script/VerifyAll.s.sol --ffi --sig "run(string,string[])" "$(file)" "$(VERIFIER_CONFIG)" --rpc-url $(NETWORK_URL)
 
 # Define a target to compile the contracts
 compile:
